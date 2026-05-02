@@ -1,0 +1,121 @@
+html, body {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+}
+
+#chat {
+    height: 90%;
+    overflow-y: scroll;
+    padding: 0 20%;
+}
+
+#top-bar {
+    height: 10%;
+}
+
+.message-row{
+    display: flex;
+    width: 100%;
+    margin: 5px 0;
+}
+
+.message-row.user{
+    justify-content: end;
+}
+
+.message-row.bot{
+    justify-content: start;
+}
+
+.message-bubble {
+    padding: 10px 30px;
+    border-radius: 15px;
+    max-width: 70%;
+    width: fit-content;
+    word-wrap: break-word;
+    font-size: 18px;
+}
+
+.user .message-bubble{ 
+    color: blue;
+    background-color: #ccc;
+}
+
+.bot  .message-bubble{
+    color: #008000;
+}
+
+#input-wrapper {
+    display: flex;
+    justify-content: center;
+    align-items: flex-end;
+    height: 10%;
+}
+
+#input-area {
+    display: flex;
+    width: 100%;
+    max-width: 800px; 
+    background: #2a2d31;
+    border-radius: 15px;
+    overflow: hidden;
+    margin: 20px;
+}
+
+#input-area.drag-over {
+    border: 2px dashed #888;
+    background-color: rgba(255,255,255,0.05);
+}
+
+#message {
+    flex: 1;
+    padding: 15px;
+    font-size: 18px;
+    border: none;
+    outline: none;
+    background: transparent;
+    color: #e4e4e7;
+    resize: none;
+    max-height: 200px;
+    box-sizing: border-box;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(228, 228, 231, 0.3) transparent;
+}
+
+#input-area button {
+    padding: 0 16px;
+    border: none;
+    background: #3a3d42;
+    color: #e4e4e7;
+    cursor: pointer;
+}
+
+#input-area button:hover {
+    background: #4a4d52;
+}
+
+#message::-webkit-scrollbar {
+  width: 8px;
+}
+
+#message::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+#message::-webkit-scrollbar-thumb {
+  background: rgba(228, 228, 231, 0.25);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+  transition: background 0.2s ease;
+}
+
+#message::-webkit-scrollbar-thumb:hover {
+  background: rgba(228, 228, 231, 0.5);
+}
+
+/* remove arrows (if any appear) */
+#message::-webkit-scrollbar-button {
+  display: none;
+}

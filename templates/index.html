@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Flask Chat</title>
+    <style>
+        
+    </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='chat.css') }}">
+</head>
+<body>
+    <div id="chat">
+        <div id="top-bar"></div>
+    </div>
+    
+    <div id="input-wrapper">
+        <div id="input-area">
+            <textarea type="text" id="message" rows="1" placeholder="Type a message..." onkeydown="checkEnter(event)"></textarea>
+            <button onclick="sendMessage()">Send</button>
+        </div>
+    </div>
+    <script src="/static/script.js"></script>
+</body>
+</html>

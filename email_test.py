@@ -1,0 +1,98 @@
+import os
+import mimetypes
+import smtplib
+import ssl
+from display_email import preview_email_html
+from email.message import EmailMessage
+from dotenv import load_dotenv
+load_dotenv()
+
+# Your Gmail credentials
+email_address = os.getenv("GMAIL_ADDRESS")
+app_password = os.getenv("GMAIL_PASSWORD")
+
+
+# from email.message import EmailMessage
+
+# reply = EmailMessage()
+# reply["Subject"] = "Re: " + original["Subject"]
+# reply["From"] = "you@gmail.com"
+# reply["To"] = original["From"]
+
+# orig_msg_id = original["Message-ID"]
+# orig_refs = original.get("References", "")
+
+# reply["In-Reply-To"] = orig_msg_id
+# reply["References"] = (orig_refs + " " + orig_msg_id).strip()
+
+# reply.set_content("Thanks for your email!")
+
+from email_validator import validate_email, EmailNotValidError
+
+def check_email(email):
+    try:
+        # Check syntax and deliverability (domain exists)
+        email_info = validate_email(email, check_deliverability=True)
+        return email_info.normalized
+    except EmailNotValidError as e:
+        print(f"Invalid: {e}")
+        return False
+
+def generate_msg(
+    to: list[str],
+    subject: str,
+    body: str,
+    cc: list[str] = [],
+    bcc: list[str] = [],
+    attachments: list[str] | None = None
+):
+    print(to,subject,body,cc,bcc,attachments)
+    msg = EmailMessage()
+    msg["From"] = email_address
+    msg["To"] = ", ".join(to)
+    msg["Subject"] = subject
+    if len(cc) is not None:
+        msg["Cc"] = ", ".join(cc)
+
+    recipients = to + cc + bcc
+    recipients = [check_email(e) for e in recipients]
+    print(recipients)
+    msg.set_content(body)
+    if attachments is not None:
+        for path, name in attachments:
+            attach_file(msg, path, name)
+    preview_email_html(msg)
+    return msg, recipients
+
+def get_type(path: str) -> tuple[str, str]:
+    mime_type, _ = mimetypes.guess_type(path)
+    if mime_type is None:
+        maintype, subtype = "application", "octet-stream"
+    else:
+        maintype, subtype = mime_type.split("/")
+
+    return maintype, subtype
+
+def attach_file(msg: EmailMessage, path: str, filename: str):
+    maintype, subtype = get_type(path)
+    with open(path, "rb") as f:
+        file_data = f.read()
+    
+    msg.add_attachment(
+        file_data,
+        maintype=maintype,
+        subtype=subtype,
+        filename=filename 
+    )
+
+def send_msg(msg: EmailMessage, recipients: list[str], protocol="ssl"):
+    if protocol == "ssl":
+        context = ssl.create_default_context()
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=context) as server:
+            server.login(email_address, app_password)
+            server.send_message(msg, to_addrs=recipients)
+    else:
+        with smtplib.SMTP("smtp.gmail.com", 587) as server:
+            server.starttls()
+            server.login(email_address, app_password)
+            server.send_message(msg, to_addrs=recipients)
