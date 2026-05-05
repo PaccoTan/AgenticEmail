@@ -1,3 +1,9 @@
+if (!sessionStorage.getItem("tab_id")) {
+    sessionStorage.setItem("tab_id", crypto.randomUUID());
+}
+
+const tabId = sessionStorage.getItem("tab_id");
+
 const textarea = document.getElementById("message");
 textarea.addEventListener("input", () => {
     textarea.style.height = "0px";            
@@ -26,12 +32,20 @@ async function sendMessage() {
         headers: {
             "Content-Type": "application/json"
         },
-        body: JSON.stringify({ message: msg })
+        body: JSON.stringify({
+            message: msg,
+            tabId: tabId
+        })
     });
 
     const data = await response.json();
     appendMessage("bot", data.reply);
     
+}
+
+function formatContent(content) {
+    if (!content) return "";
+    return marked.parse(content);
 }
 
 function appendMessage(sender, text) {
@@ -40,7 +54,7 @@ function appendMessage(sender, text) {
     const msgContainer = document.createElement("div");
     msgContainer.className = "message-row " + sender;
     div.className = "message-bubble";
-    div.textContent = text;
+    div.innerHTML = formatContent(text);
     msgContainer.appendChild(div);
     chat.appendChild(msgContainer);
     chat.scrollTop = chat.scrollHeight;
@@ -76,3 +90,15 @@ function handleFiles(files) {
     }
 
 }
+
+window.addEventListener("beforeunload", function () {
+    const data = JSON.stringify({
+        tabId: tabId
+    });
+
+    const blob = new Blob([data], {
+        type: "application/json"
+    });
+
+    navigator.sendBeacon("/tab-close", blob);
+});
