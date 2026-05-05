@@ -5,6 +5,7 @@ import ssl
 from display_email import preview_email_html
 from email.message import EmailMessage
 from dotenv import load_dotenv
+import markdown
 load_dotenv()
 
 # Your Gmail credentials
@@ -46,7 +47,6 @@ def generate_msg(
     bcc: list[str] = [],
     attachments: list[str] | None = None
 ):
-    print(to,subject,body,cc,bcc,attachments)
     msg = EmailMessage()
     msg["From"] = email_address
     msg["To"] = ", ".join(to)
@@ -58,6 +58,7 @@ def generate_msg(
     recipients = [check_email(e) for e in recipients]
     print(recipients)
     msg.set_content(body)
+    msg.add_alternative(markdown.markdown(body,extensions=["extra", "codehilite", "nl2br"]),subtype="html")
     if attachments is not None:
         for path, name in attachments:
             attach_file(msg, path, name)
