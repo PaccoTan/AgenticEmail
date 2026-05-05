@@ -3,7 +3,7 @@ import json
 from openai import OpenAI
 from dotenv import load_dotenv
 from jsonschema import validate, ValidationError
-from email_test import generate_msg, send_msg
+from send_email import generate_msg, send_msg
 from typing import Dict, Any
 
 load_dotenv()
@@ -27,7 +27,7 @@ TOOL_GENERATE_EMAIL = {
     "type": "function",
     "function": {
         "name": "generate_email",
-        "description": "Create an email message with optional attachments, cc, and bcc."
+        "description": "Create an email message. User can include attachments or specify CC and BCC."
                        "Returns a valid email message ready to be sent."
                        "Displays a simple preivew of the message.",
         "strict": True,
@@ -48,7 +48,7 @@ TOOL_GENERATE_EMAIL = {
                 },
                 "body": {
                     "type": "string",
-                    "description": "Body content of the email in plain text. There is no markdown or html support. Please keep formatting minimal."
+                    "description": "Body content of the email in markdown."
                 },
                 "cc": {
                     "type": "array",
@@ -117,6 +117,7 @@ TOOL_EXECUTORS = {
 # Map tool names to their parameter schemas (for validation)
 TOOL_SCHEMAS = {
     "generate_email": TOOL_GENERATE_EMAIL["function"]["parameters"],
+    "send_email": TOOL_SEND_EMAIL["function"]["parameters"]
 }
 
 def validate_tool_args(tool_name: str, args: Dict[str, Any]) -> None:
@@ -162,7 +163,7 @@ def execute_tool(tool_name: str, args: Dict[str, Any]) -> Dict[str, Any]:
     executor = TOOL_EXECUTORS[tool_name]
     return executor(args)
 
-def run_agent(client: OpenAI, goal: str, model: str = "gpt-4o-mini") -> str:
+def run_agent(client: OpenAI, messages: Dict[str, Any], goal: str, model: str = "gpt-4o-mini") -> str:
     """
     Run a two-turn agent controller to accomplish a goal.
     
@@ -178,25 +179,8 @@ def run_agent(client: OpenAI, goal: str, model: str = "gpt-4o-mini") -> str:
         The final answer from the model.
     """
     print(f"\n{'='*60}")
-    print(f"GOAL: {goal}")
+    print(f"GOAL: {messages[-1]["content"]}")
     print(f"{'='*60}")
-    
-    # System prompt for the agent
-    system_prompt = """You are a helpful email assistant with access to tools. 
-When the user asks you to do something, use the appropriate tool(s) to help them.
-Available tools:
-- generate_email: Create a simple email message and displays a preview to the user. Does not send the message.
-- send_email: Send the email message to the target recipients.
-
-Always use tools when they can help the user accomplish their goal. 
-Only send an email, when the user is satisfied with the preview.
-The user's name is Pacco Tan."""
-
-    # Initialize conversation
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": goal}
-    ]
     
     # Turn 1: Let the model pick a tool
     print("\n[Turn 1] Sending goal to model...")
@@ -208,7 +192,7 @@ The user's name is Pacco Tan."""
     )
     
     assistant_message = response.choices[0].message
-    messages.append(assistant_message)
+    messages.append(assistant_message.model_dump())
     
     # Check if the model wants to call tools
     if not assistant_message.tool_calls:
@@ -221,22 +205,15 @@ The user's name is Pacco Tan."""
     for tool_call in assistant_message.tool_calls:
         tool_name = tool_call.function.name
         
-        # STUDENT_TODO: Parse arguments from the tool call
-        # The arguments are in tool_call.function.arguments as a JSON string
-        # Use json.loads() to convert to a dictionary
-        # Handle json.JSONDecodeError if parsing fails
         try:
-            # STUDENT_TODO: Replace with json.loads(tool_call.function.arguments)
             tool_args = json.loads(tool_call.function.arguments)  
         except json.JSONDecodeError as e:
-            # Print error message and skip this tool
             print(f"Unable to parse tool arguments for {tool_name}.\n{e}")
             continue
         
         print(f"\n[Turn 1] Tool call: {tool_name}")
         print(f"         Arguments: {tool_args}")
         
-        # Validate and execute the tool
         try:
             result = execute_tool(tool_name, tool_args)
             print(f"         Result: {result}")
@@ -271,9 +248,8 @@ The user's name is Pacco Tan."""
         tools=TOOLS,
         tool_choice="auto"
     )
-    
     final_message = response.choices[0].message
-    
+    messages.append(final_message.model_dump())
     # Handle case where model wants more tool calls (simplified: just take content)
     if final_message.tool_calls:
         # For this simple controller, we don't do more than 2 turns
