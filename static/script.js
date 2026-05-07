@@ -17,6 +17,19 @@ function checkEnter(event) {
     }
 }
 
+const socket = io();
+socket.on("show_popup", (data) => {
+    const result = confirm(data.message);
+    socket.emit("popup_response", {
+        id: data.requestId,
+        answer: result ? "yes" : "no"
+    });
+});
+
+socket.on("bot-reply", (data) => {
+    appendMessage("bot", data.reply);
+});
+
 async function sendMessage() {
     const input = document.getElementById("message");
     const msg = input.value;
@@ -38,9 +51,7 @@ async function sendMessage() {
         })
     });
 
-    const data = await response.json();
-    appendMessage("bot", data.reply);
-    
+    const data = await response.json();    
 }
 
 function formatContent(content) {

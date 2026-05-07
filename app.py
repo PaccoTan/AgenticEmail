@@ -1,14 +1,16 @@
 import json
 from flask import Flask, render_template, request, jsonify
-from agent import get_openai_client, run_agent
+from extensions import socketio
+from agent import get_openai_client, run_agent_wrapper
 from flask import session
+import sockets
 import uuid
 
 app = Flask(__name__)
 system_prompt = """You are a helpful email assistant with access to tools. 
 When the user asks you to do something, use the appropriate tool(s) to help them.
 Available tools:
-- generate_email: Create a simple email message and displays a preview to the user. Does not send the message.
+- generate_email: Create a simple email message. Does not send the message.
 - send_email: Send the email message to the target recipients.
 
 Always use tools when they can help the user accomplish their goal. 
@@ -34,27 +36,26 @@ def send():
     if user_msg:
         messages[tab_id].append({"role": "user", "content": user_msg})
         
-        bot_reply = f"{run_agent(app.model,messages[tab_id],user_msg)}"
-        return jsonify({"reply": bot_reply})
+        socketio.start_background_task(run_agent_wrapper,app.model,messages[tab_id],user_msg)
+        return jsonify({"reply": "Processing."})
 
     return jsonify({"error": "No message"}), 400
 
 @app.route("/messages")
 def get_messages():
-    print(messages)
     return jsonify(messages)
 
 @app.route("/tab-close", methods=["POST"])
 def save_history():
     data = request.json
-    print(data)
     tab_id = data.get("tabId")
-    with open(f"conversatins/{tab_id}.json","w") as f:
-        f.write(json.dumps(messages))
-    print(tab_id)
+    chat_history = messages.pop(tab_id)
+    with open(f"conversations/{tab_id}.json","w") as f:
+        f.write(json.dumps(chat_history, indent = 4))
 
 if __name__ == "__main__":
     app.secret_key = "Secret Key"
     app.model = get_openai_client()
-    app.run(debug=True)
+    socketio.init_app(app)
+    socketio.run(app, debug=True)
     

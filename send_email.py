@@ -1,3 +1,4 @@
+from email.utils import getaddresses
 import os
 import mimetypes
 import smtplib
@@ -62,7 +63,6 @@ def generate_msg(
     if attachments is not None:
         for path, name in attachments:
             attach_file(msg, path, name)
-    preview_email_html(msg)
     return msg, recipients
 
 def get_type(path: str) -> tuple[str, str]:
@@ -87,6 +87,13 @@ def attach_file(msg: EmailMessage, path: str, filename: str):
     )
 
 def send_msg(msg: EmailMessage, recipients: list[str], protocol="ssl"):
+    msg_recipients = []
+    for header in ["To", "Cc", "Bcc"]:
+        if msg[header]:
+            msg_recipients.extend(getaddresses([msg[header]]))
+    msg_recipients = [email for _, email in msg_recipients]
+    if sorted(msg_recipients) != sorted(recipients):
+        raise ValueError("Recipients do not match header recipients.")
     if protocol == "ssl":
         context = ssl.create_default_context()
         with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=context) as server:

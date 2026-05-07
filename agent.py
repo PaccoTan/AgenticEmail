@@ -1,10 +1,18 @@
+from email.parser import BytesParser
 import os
 import json
+from pathlib import Path
+import threading
 from openai import OpenAI
 from dotenv import load_dotenv
 from jsonschema import validate, ValidationError
+from email import policy
 from send_email import generate_msg, send_msg
+from display_email import preview_email_html
 from typing import Dict, Any
+from extensions import socketio
+from sockets import pending
+import uuid
 
 load_dotenv()
 
@@ -92,19 +100,59 @@ TOOL_SEND_EMAIL = {
                 "msg_id": {
                     "type": "string",
                     "description": "Message id of the message to be transmitted."
+                },
+                "recipients": {
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                        "format": "email"
+                    },
+                    "description": "All recipients of the email.",
                 }
             },
-            "required": ["msg_id"],
+            "required": ["msg_id","recipients"],
             "additionalProperties": False
         }
     }
 }
 
 def exec_generate_email(args: Dict[str, Any]) -> Dict[str, Any]:
-    msg, recipients = generate_msg(**args)   
+    msg, recipients = generate_msg(**args)
+    if len(recipients):
+        msg_id = str(uuid.uuid4())
+        with open(f'emails/{msg_id}.eml', 'wb') as f:
+            f.write(msg.as_bytes())
+        
+        return {
+            "recipients": recipients,
+            "response": "Email message generated and displayed for user.",
+            "msg_id": msg_id
+        }
 
 def exec_send_msg(args: Dict[str, Any]) -> Dict[str, Any]:
-    print(args)
+    if "msg_id" not in args and "recipieints" not in args:
+        return {"error": "No msg_id specified."}
+    msg_id = args["msg_id"]
+    recipients = args["recipients"]
+    if Path(f"emails/{msg_id}.eml").is_file():
+        with open(f'emails/{msg_id}.eml', 'rb') as f:
+            msg = BytesParser(policy=policy.default).parse(f)
+        request_id = str(uuid.uuid4())
+        event = threading.Event()
+        pending[request_id] = {"event": event, "answer": None}
+        socketio.emit("show_popup", {
+            "message": f"Do you want to send the email?",
+            "requestId": request_id
+        })
+        preview_email_html(msg)
+        event.wait()
+        if pending[request_id]["answer"] == "yes":
+            send_msg(msg, recipients)
+            return {"response": "Email sent."}
+        else:
+            return {"response": "User denied email send request."}
+    else:
+        return {"error": "Unknown msg_id given."}
 
 TOOLS = [TOOL_GENERATE_EMAIL, TOOL_SEND_EMAIL]
 
@@ -165,10 +213,7 @@ def execute_tool(tool_name: str, args: Dict[str, Any]) -> Dict[str, Any]:
 
 def run_agent(client: OpenAI, messages: Dict[str, Any], goal: str, model: str = "gpt-4o-mini") -> str:
     """
-    Run a two-turn agent controller to accomplish a goal.
-    
-    Turn 1: Send goal to model, let it pick a tool and supply arguments.
-    Turn 2: Execute tool, send result back, get final answer.
+    Run a multi-turn agent controller to accomplish a goal.
     
     Args:
         client: OpenAI client instance.
@@ -181,7 +226,7 @@ def run_agent(client: OpenAI, messages: Dict[str, Any], goal: str, model: str = 
     print(f"\n{'='*60}")
     print(f"GOAL: {messages[-1]["content"]}")
     print(f"{'='*60}")
-    
+
     # Turn 1: Let the model pick a tool
     print("\n[Turn 1] Sending goal to model...")
     response = client.chat.completions.create(
@@ -191,70 +236,70 @@ def run_agent(client: OpenAI, messages: Dict[str, Any], goal: str, model: str = 
         tool_choice="auto"
     )
     
-    assistant_message = response.choices[0].message
-    messages.append(assistant_message.model_dump())
-    
-    # Check if the model wants to call tools
-    if not assistant_message.tool_calls:
-        # No tool calls, model answered directly
-        print("[Turn 1] Model answered without tools")
-        return assistant_message.content or "No response generated"
-    
-    # Process each tool call
-    tool_results = []
-    for tool_call in assistant_message.tool_calls:
-        tool_name = tool_call.function.name
+    for i in range(5):
+        assistant_message = response.choices[0].message
+        messages.append(assistant_message.model_dump())
         
-        try:
-            tool_args = json.loads(tool_call.function.arguments)  
-        except json.JSONDecodeError as e:
-            print(f"Unable to parse tool arguments for {tool_name}.\n{e}")
-            continue
+        # Check if the model wants to call tools
+        if not assistant_message.tool_calls:
+            # No tool calls, model answered directly
+            print(f"[Turn {i+1}] Model answered without tools")
+            return assistant_message.content or "No response generated"
         
-        print(f"\n[Turn 1] Tool call: {tool_name}")
-        print(f"         Arguments: {tool_args}")
+        # Process each tool call
+        tool_results = []
+        for tool_call in assistant_message.tool_calls:
+            tool_name = tool_call.function.name
+            
+            try:
+                tool_args = json.loads(tool_call.function.arguments)  
+            except json.JSONDecodeError as e:
+                print(f"Unable to parse tool arguments for {tool_name}.\n{e}")
+                continue
+            
+            print(f"\n[Turn {i+1}] Tool call: {tool_name}")
+            print(f"         Arguments: {tool_args}")
+            
+            try:
+                result = execute_tool(tool_name, tool_args)
+                print(f"         Result: {result}")
+                tool_results.append({
+                    "tool_call_id": tool_call.id,
+                    "role": "tool",
+                    "content": json.dumps(result)
+                })
+            except ValidationError as e:
+                print(f"[Error] Validation failed: {e.message}")
+                tool_results.append({
+                    "tool_call_id": tool_call.id,
+                    "role": "tool",
+                    "content": json.dumps({"error": f"Validation failed: {e.message}"})
+                })
+            except Exception as e:
+                print(f"[Error] Tool execution failed: {e}")
+                tool_results.append({
+                    "tool_call_id": tool_call.id,
+                    "role": "tool",
+                    "content": json.dumps({"error": str(e)})
+                })
         
-        try:
-            result = execute_tool(tool_name, tool_args)
-            print(f"         Result: {result}")
-            tool_results.append({
-                "tool_call_id": tool_call.id,
-                "role": "tool",
-                "content": json.dumps(result)
-            })
-        except ValidationError as e:
-            print(f"[Error] Validation failed: {e.message}")
-            tool_results.append({
-                "tool_call_id": tool_call.id,
-                "role": "tool",
-                "content": json.dumps({"error": f"Validation failed: {e.message}"})
-            })
-        except Exception as e:
-            print(f"[Error] Tool execution failed: {e}")
-            tool_results.append({
-                "tool_call_id": tool_call.id,
-                "role": "tool",
-                "content": json.dumps({"error": str(e)})
-            })
-    
-    # Add tool results to messages
-    messages.extend(tool_results)
-    
-    # Turn 2: Send tool results back and get final answer
-    print("\n[Turn 2] Sending tool results to model...")
-    response = client.chat.completions.create(
-        model=model,
-        messages=messages,
-        tools=TOOLS,
-        tool_choice="auto"
-    )
+        messages.extend(tool_results)
+
+        print(f"\n[Turn {i+2}] Sending tool results to model...")
+        response = client.chat.completions.create(
+            model=model,
+            messages=messages,
+            tools=TOOLS,
+            tool_choice="auto"
+        )
+        
     final_message = response.choices[0].message
     messages.append(final_message.model_dump())
-    # Handle case where model wants more tool calls (simplified: just take content)
+
     if final_message.tool_calls:
         # For this simple controller, we don't do more than 2 turns
         # In production, you'd loop until done or hit a budget
-        print("[Turn 2] Model requested more tools (not supported in this simple controller)")
+        print("Model took too many tries.")
     
     final_answer = final_message.content or "No final answer generated"
     
@@ -264,3 +309,10 @@ def run_agent(client: OpenAI, messages: Dict[str, Any], goal: str, model: str = 
     print(final_answer)
     
     return final_answer
+
+def run_agent_wrapper(client: OpenAI, messages: Dict[str, Any], goal: str, model: str = "gpt-4o-mini"):
+    print(messages)
+    result = run_agent(client, messages, goal)
+    socketio.emit("bot-reply", {
+        "reply": result
+    })
