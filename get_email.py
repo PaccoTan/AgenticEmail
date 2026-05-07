@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 from email.utils import getaddresses, parsedate_to_datetime
 from operator import itemgetter
 import json
+from pathlib import Path
 load_dotenv()
 
 
@@ -26,12 +27,19 @@ app_password = os.getenv("GMAIL_PASSWORD")
 # Reply-To:
 
 def load_contacts():
+    path = Path("data/contacts.json")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.touch(exist_ok=True)
     try:
         with open('data/contacts.json', 'r') as f:
             contacts = json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
         contacts = {}
     return contacts
+
+def save_contacts(contacts):
+    with open('data/contacts.json', "w") as f:
+        json.dump(contacts,f, indent=4)
 
 def fetch_emails(email_ids, batch_size=100):
     msgs = []
@@ -46,12 +54,31 @@ def fetch_emails(email_ids, batch_size=100):
     return msgs
 
 def get_last_uid(mailbox="inbox"):
+    path = Path("data/metadata.json")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if not path.exists():
+        with open(path, "w") as f:
+            json.dump({}, f, indent=4)
     with open('data/metadata.json', 'r') as file:
         data = json.load(file)
     if mailbox in data and 'last_uid' in data[mailbox]:
         result = data[mailbox]['last_uid']
         return result
     return ""
+
+def update_last_uid(email_id, mailbox="inbox"):
+    path = Path("data/metadata.json")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if not path.exists():
+        with open(path, "w") as f:
+            json.dump({}, f, indent=4)
+    with open('data/metadata.json', 'r') as file:
+        data = json.load(file)
+    if mailbox not in data:
+        data[mailbox] = {}
+    data[mailbox]['last_uid'] = email_id.decode()
+    with open('data/metadata.json', 'w') as file:
+        json.dump(data,file, indent=4)
 
 def get_contacts(batch_size=100):
     mail.login(email_address,app_password)
@@ -65,7 +92,6 @@ def get_contacts(batch_size=100):
                 mailboxes.append(mailbox_name)
     contacts = load_contacts()
     NO_CONTACTS = len(contacts)
-    UPDATE_CONTACTS= False
     for mailbox in mailboxes:
         status, _ = mail.select(f'"{mailbox}"')
         if status != "OK":
@@ -81,6 +107,9 @@ def get_contacts(batch_size=100):
             _, messages =  mail.uid("search", None, f"UID {last_uid}:*")
             email_ids = messages[0].split()
             email_ids = sorted(email_ids, key=int)
+        
+        if len(email_ids) == []:
+            continue
 
         msg_data = fetch_emails(email_ids, batch_size=100)
         for response_part in msg_data:
@@ -97,9 +126,8 @@ def get_contacts(batch_size=100):
                                 contacts[addr] = (addr, name, date, contacts[addr][-1] + 1)
                             else:
                                 contacts[addr] = (addr, name, date, 1)
-
-    with open('data/contacts.json',"w") as f:
-        json.dump(contacts, f,indent=4)
+        update_last_uid(email_ids[-1],mailbox)
+    save_contacts(contacts)
     return contacts
 
 get_contacts()
