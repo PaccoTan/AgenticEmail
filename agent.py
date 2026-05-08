@@ -78,11 +78,23 @@ TOOL_GENERATE_EMAIL = {
                 "attachments": {
                     "type": "array",
                     "items": {
-                        "type": "string"
+                        "type": "object",
+                        "properties": {
+                            "filepath": {
+                                "type": "string",
+                                "description": "Absolute server file path (e.g. uploads/file.pdf)",
+                            },
+                            "filename": {
+                                "type": "string",
+                                "description": "Informative display name of the file to be used in the email."
+                            }
+                        },
+                        "required": ["filepath", "filename"],
+                        "additionalProperties": False
                     },
-                    "description": "File paths or identifiers for attachments. Use empty array if none.",
+                    "description": "List of attachments with file path and filename. Use empty array if none."
                 }
-                },
+            },
             "required": ["to", "subject", "body", "cc", "bcc", "attachments"],
             "additionalProperties": False
         }
@@ -132,6 +144,7 @@ TOOL_GET_CONTACTS = {
                 },
                 "n": {
                     "type": "number",
+                    "minimum": 5,
                     "description": "The number of matching contacts returned."
                 }
             },

@@ -1,9 +1,13 @@
 import json
+from pathlib import Path
 from flask import Flask, render_template, request, jsonify
+from config import UPLOAD_FOLDER
 from extensions import socketio
 from agent import get_openai_client, run_agent_wrapper
 from flask import session
 from get_email import get_contacts
+from werkzeug.utils import secure_filename
+import os
 import sockets
 import uuid
 
@@ -19,7 +23,6 @@ Always use tools when they can help the user accomplish their goal.
 If you do not know the email information requested, search for it using get_contacts.
 Only send an email, when the user is satisfied with the preview.
 The user's name is Pacco Tan."""
-
 
 # In-memory chat storage (resets when server restarts)
 messages = {}
@@ -53,15 +56,39 @@ def save_history():
     data = request.json
     tab_id = data.get("tabId")
     chat_history = messages.pop(tab_id)
-    with open(f"conversations/{tab_id}.json","w") as f:
-        f.write(json.dumps(chat_history, indent = 4))
+    path = Path(f"conversations/{tab_id}.json")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path,"w") as f:
+        json.dump(chat_history,f, indent = 4)
+    return ('', 200)
 
 @app.route("/contacts")
 def match_contact():
     result = get_contacts("Tramanh",5)
     print(result)
     return jsonify(result)
-    
+
+@app.route("/upload", methods=["POST"])
+def upload():
+    files = request.files.getlist("files")
+    saved_files = []
+    try:
+        for file in files:
+            filename = secure_filename(file.filename)
+            file.seek(0, 2)
+            size = file.tell()
+            file.seek(0)
+            path = os.path.join(UPLOAD_FOLDER, filename)
+            file.save(path)
+            saved_files.append((filename, file.mimetype, size))
+    except _: 
+        return jsonify({
+            "status": "error"
+        })
+    return jsonify({
+        "status": "ok",
+        "files": saved_files
+    })
 
 if __name__ == "__main__":
     app.secret_key = "Secret Key"

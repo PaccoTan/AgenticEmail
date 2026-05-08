@@ -7,6 +7,7 @@ from display_email import preview_email_html
 from email.message import EmailMessage
 from dotenv import load_dotenv
 import markdown
+from config import UPLOAD_FOLDER
 load_dotenv()
 
 # Your Gmail credentials
@@ -61,8 +62,8 @@ def generate_msg(
     msg.set_content(body)
     msg.add_alternative(markdown.markdown(body,extensions=["extra", "codehilite", "nl2br"]),subtype="html")
     if attachments is not None:
-        for path, name in attachments:
-            attach_file(msg, path, name)
+        for file in attachments:
+            attach_file(msg, file["filepath"], file["filename"])
     return msg, recipients
 
 def get_type(path: str) -> tuple[str, str]:
@@ -75,6 +76,10 @@ def get_type(path: str) -> tuple[str, str]:
     return maintype, subtype
 
 def attach_file(msg: EmailMessage, path: str, filename: str):
+    # print(path[:7])
+    # if "uploads/" != path[:7]:
+    #     raise ValueError("Filepath must start with uploads/.")
+    
     maintype, subtype = get_type(path)
     with open(path, "rb") as f:
         file_data = f.read()

@@ -93,26 +93,44 @@ dropZone.addEventListener("drop", (e) => {
     }
 });
 
-function handleFiles(files) {
+async function handleFiles(files) {
     const formData = new FormData();
     for (let file of files) {
         console.log("Dropped file:", file.name);
         console.log(file.type);
         console.log(file.size);
         appendMessage("user", `📎 ${file.name}`);
+        formData.append("files", file);
     }
 
-    fetch("/upload", {
-        method: "POST",
-        body: formData
-    })
-    .then(res => res.json())
-    .then(data => {
-        console.log("Server response:", data);
-    })
-    .catch(err => {
+    try {
+        const uploadRes = await fetch("/upload", {
+            method: "POST",
+            body: formData
+        });
+
+        const data = await uploadRes.json();
+        if (data.status === "ok") {
+            console.log("Upload successful");
+            console.log(data.files);
+            const fileStr = data.files
+                .map(f => `${f[0]} (${f[1]}, ${f[2]} bytes)`)
+                .join("\n");
+            const response = await fetch("/send", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    message: `Uploaded ${fileStr}`,
+                    tabId: tabId
+                })
+            });
+        }
+    } catch (err) {
         console.error("Upload error:", err);
-    });
+    }
+
 }
 
 window.addEventListener("beforeunload", function () {
