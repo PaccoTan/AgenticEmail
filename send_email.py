@@ -12,7 +12,7 @@ load_dotenv()
 # Your Gmail credentials
 email_address = os.getenv("GMAIL_ADDRESS")
 app_password = os.getenv("GMAIL_PASSWORD")
-
+MAX_SAFE_SIZE = 15 * 1024 * 1024  
 
 # from email.message import EmailMessage
 
@@ -97,7 +97,10 @@ def send_msg(msg: EmailMessage, recipients: list[str], protocol="ssl"):
     if protocol == "ssl":
         context = ssl.create_default_context()
         with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=context) as server:
+            if len(msg.as_bytes()) > MAX_SAFE_SIZE:
+                 raise ValueError("Email exceeds 20MB limit.")
             server.login(email_address, app_password)
+
             server.send_message(msg, to_addrs=recipients)
     else:
         with smtplib.SMTP("smtp.gmail.com", 587) as server:

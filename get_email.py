@@ -6,13 +6,15 @@ from email.utils import getaddresses, parsedate_to_datetime
 from operator import itemgetter
 import json
 from pathlib import Path
+from flask import current_app
 load_dotenv()
 
 
 mail = imaplib.IMAP4_SSL("imap.gmail.com")
 email_address = os.getenv("GMAIL_ADDRESS")
 app_password = os.getenv("GMAIL_PASSWORD")
-
+if mail.state not in ("AUTH", "SELECTED"):
+    mail.login(email_address, app_password)
 
 # From:
 # To:
@@ -80,8 +82,7 @@ def update_last_uid(email_id, mailbox="inbox"):
     with open('data/metadata.json', 'w') as file:
         json.dump(data,file, indent=4)
 
-def get_contacts(batch_size=100):
-    mail.login(email_address,app_password)
+def retrieve_contacts(batch_size=100):
     mailboxes = ['INBOX']
     status, boxes = mail.list()
     if status == "OK":
@@ -130,4 +131,53 @@ def get_contacts(batch_size=100):
     save_contacts(contacts)
     return contacts
 
-get_contacts()
+def get_contacts(client,model,query,n=10):
+    if n > 50:
+        return {"error": "Requested for more than 50 matches."}
+    contacts = retrieve_contacts().values()
+    messages = [{
+        "role": "system",
+        "content": "You are a contact-matching system. Your task is to return the top N most relevant contacts from a provided list based on a user query.\n\nEach contact is a tuple:\n(email, name, mostRecentContactDate, occurrences)\n\nYour job is to rank contacts by relevance to the query.\n\nMatching guidelines:\n1. Name similarity is the most important factor (exact match > partial match > fuzzy match).\n2. Email relevance provides secondary signal (prefix or domain overlap with query).\n3. Recency matters: more recent mostRecentContactDate increases relevance.\n4. Occurrences indicate relationship strength and should increase ranking.\n5. Interpret query intent: if it looks like a person name, prioritize name matching; if it looks like an email/domain, prioritize email matching.\n\nTie-breaking:\n- Higher occurrences first\n- More recent contact date second\n- Lexicographically earlier email last\n\nOutput requirements:\n- Return exactly N results if available, otherwise return all matches.\n- Each result must include: email, name, score (0–1), and a short reason (1–2 sentences).\n- Do not fabricate or modify contacts.\n\nReturn results sorted from most to least relevant."
+    },{
+        "role": "user",
+        "content": f"Query: {query}\nN: {n}\nContacts: {contacts}"
+    }]
+
+    schema = {
+        "name": "rank_contacts",
+        "description": "Ranks contacts by relevance to a query",
+        "strict": True,
+        "schema": {
+            "type": "object",
+            "properties": {
+            "results": {
+                "type": "array",
+                "items": {
+                "type": "object",
+                "properties": {
+                    "email": { "type": "string" },
+                    "name": { "type": "string" },
+                    "score": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                    },
+                    "reason": { "type": "string" }
+                },
+                "required": ["email", "name", "score", "reason"],
+                "additionalProperties": False
+                }
+            }
+            },
+            "required": ["results"],
+            "additionalProperties": False
+        }
+    }
+    response = client.chat.completions.create(
+        model= model,
+        messages=messages,
+        temperature=0, 
+        response_format={"type":"json_schema", "json_schema": schema} 
+    )
+    result = json.loads(response.choices[0].message.content)
+    return result

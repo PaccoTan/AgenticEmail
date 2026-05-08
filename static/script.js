@@ -94,12 +94,25 @@ dropZone.addEventListener("drop", (e) => {
 });
 
 function handleFiles(files) {
+    const formData = new FormData();
     for (let file of files) {
         console.log("Dropped file:", file.name);
-
+        console.log(file.type);
+        console.log(file.size);
         appendMessage("user", `📎 ${file.name}`);
     }
 
+    fetch("/upload", {
+        method: "POST",
+        body: formData
+    })
+    .then(res => res.json())
+    .then(data => {
+        console.log("Server response:", data);
+    })
+    .catch(err => {
+        console.error("Upload error:", err);
+    });
 }
 
 window.addEventListener("beforeunload", function () {

@@ -7,6 +7,7 @@ from openai import OpenAI
 from dotenv import load_dotenv
 from jsonschema import validate, ValidationError
 from email import policy
+from get_email import get_contacts
 from send_email import generate_msg, send_msg
 from display_email import preview_email_html
 from typing import Dict, Any
@@ -116,6 +117,34 @@ TOOL_SEND_EMAIL = {
     }
 }
 
+TOOL_GET_CONTACTS = {
+    "type": "function",
+    "function": {
+        "name": "get_contacts",
+        "description": "Searches through contacts with a query returning n matches.",
+        "strict": True,
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Query used to search for matches in contact list."
+                },
+                "n": {
+                    "type": "number",
+                    "description": "The number of matching contacts returned."
+                }
+            },
+            "required": ["query","n"],
+            "additionalProperties": False
+        }
+    }
+}
+
+def exec_get_contacts(args: Dict[str, Any]) -> Dict[str, Any]:
+    return get_contacts(**args)
+
+
 def exec_generate_email(args: Dict[str, Any]) -> Dict[str, Any]:
     msg, recipients = generate_msg(**args)
     if len(recipients):
@@ -154,18 +183,20 @@ def exec_send_msg(args: Dict[str, Any]) -> Dict[str, Any]:
     else:
         return {"error": "Unknown msg_id given."}
 
-TOOLS = [TOOL_GENERATE_EMAIL, TOOL_SEND_EMAIL]
+TOOLS = [TOOL_GENERATE_EMAIL, TOOL_SEND_EMAIL, TOOL_GET_CONTACTS]
 
 # Map tool names to their executors
 TOOL_EXECUTORS = {
     "generate_email": exec_generate_email,
-    "send_email": exec_send_msg
+    "send_email": exec_send_msg,
+    "get_contacts": exec_get_contacts
 }
 
 # Map tool names to their parameter schemas (for validation)
 TOOL_SCHEMAS = {
     "generate_email": TOOL_GENERATE_EMAIL["function"]["parameters"],
-    "send_email": TOOL_SEND_EMAIL["function"]["parameters"]
+    "send_email": TOOL_SEND_EMAIL["function"]["parameters"],
+    "get_contacts": TOOL_GET_CONTACTS["function"]["parameters"],
 }
 
 def validate_tool_args(tool_name: str, args: Dict[str, Any]) -> None:
@@ -186,7 +217,7 @@ def validate_tool_args(tool_name: str, args: Dict[str, Any]) -> None:
     schema = TOOL_SCHEMAS[tool_name]
     validate(instance=args, schema=schema)
 
-def execute_tool(tool_name: str, args: Dict[str, Any]) -> Dict[str, Any]:
+def execute_tool(tool_name: str, args: Dict[str, Any], client: OpenAI, model: str) -> Dict[str, Any]:
     """
     Validate and execute a tool.
     
@@ -208,6 +239,10 @@ def execute_tool(tool_name: str, args: Dict[str, Any]) -> Dict[str, Any]:
     if tool_name not in TOOL_EXECUTORS:
         raise KeyError(f"No executor found for tool: {tool_name}")
     
+    if tool_name == "get_contacts":
+        args['client'] = client
+        args['model'] = model
+
     executor = TOOL_EXECUTORS[tool_name]
     return executor(args)
 
@@ -261,7 +296,7 @@ def run_agent(client: OpenAI, messages: Dict[str, Any], goal: str, model: str = 
             print(f"         Arguments: {tool_args}")
             
             try:
-                result = execute_tool(tool_name, tool_args)
+                result = execute_tool(tool_name, tool_args, client, model)
                 print(f"         Result: {result}")
                 tool_results.append({
                     "tool_call_id": tool_call.id,
