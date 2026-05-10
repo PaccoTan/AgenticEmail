@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 from flask import Flask, render_template, request, jsonify, send_from_directory
-from config import CONVERSATION_FOLDER, UPLOAD_FOLDER, GENERATED_DOCUMENTS_FOLDER
+from config import CONVERSATION_FOLDER, UPLOAD_FOLDER, GENERATED_DOCUMENTS_FOLDER, USER
 from extensions import socketio
 from agent import get_openai_client, run_agent_wrapper
 from flask import session
@@ -25,7 +25,7 @@ app = Flask(__name__)
 # Only send an email, when the user is satisfied with the preview.
 # The user's name is Pacco Tan."""
 
-system_prompt = """You are an email and document assistant with access to tools.
+system_prompt = f"""You are an email and document assistant with access to tools.
 
 Your job is to help the user draft emails, look up contacts, generate PDFs, and send finalized messages.
 
@@ -64,7 +64,7 @@ Behavior rules:
 
 6. Be concise, professional, and action-oriented.
 
-7. The user's name is Pacco Tan. Use it naturally when appropriate."""
+7. The user's name is {USER}. Use it naturally when appropriate."""
 
 # In-memory chat storage (resets when server restarts)
 messages = {}

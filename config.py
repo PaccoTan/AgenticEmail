@@ -1,5 +1,8 @@
 import os
+from dotenv import load_dotenv
+load_dotenv()
 
+USER = os.getenv("USER_NAME")
 UPLOAD_FOLDER = "uploads"
 EMAIL_FOLDER = "emails"
 CONVERSATION_FOLDER = "conversations"
