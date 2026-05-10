@@ -7,6 +7,7 @@ from operator import itemgetter
 import json
 from pathlib import Path
 from flask import current_app
+from config import DATA_FOLDER
 load_dotenv()
 
 
@@ -29,18 +30,18 @@ if mail.state not in ("AUTH", "SELECTED"):
 # Reply-To:
 
 def load_contacts():
-    path = Path("data/contacts.json")
+    path = Path(f"{DATA_FOLDER}/contacts.json")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.touch(exist_ok=True)
     try:
-        with open('data/contacts.json', 'r') as f:
+        with open(f'{DATA_FOLDER}/contacts.json', 'r') as f:
             contacts = json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
         contacts = {}
     return contacts
 
 def save_contacts(contacts):
-    with open('data/contacts.json', "w") as f:
+    with open(f'{DATA_FOLDER}/contacts.json', "w") as f:
         json.dump(contacts,f, indent=4)
 
 def fetch_emails(email_ids, batch_size=100):
@@ -56,12 +57,12 @@ def fetch_emails(email_ids, batch_size=100):
     return msgs
 
 def get_last_uid(mailbox="inbox"):
-    path = Path("data/metadata.json")
+    path = Path(f"{DATA_FOLDER}/metadata.json")
     path.parent.mkdir(parents=True, exist_ok=True)
     if not path.exists():
         with open(path, "w") as f:
             json.dump({}, f, indent=4)
-    with open('data/metadata.json', 'r') as file:
+    with open(f'{DATA_FOLDER}/metadata.json', 'r') as file:
         data = json.load(file)
     if mailbox in data and 'last_uid' in data[mailbox]:
         result = data[mailbox]['last_uid']
@@ -69,17 +70,17 @@ def get_last_uid(mailbox="inbox"):
     return ""
 
 def update_last_uid(email_id, mailbox="inbox"):
-    path = Path("data/metadata.json")
+    path = Path(f"{DATA_FOLDER}/metadata.json")
     path.parent.mkdir(parents=True, exist_ok=True)
     if not path.exists():
         with open(path, "w") as f:
             json.dump({}, f, indent=4)
-    with open('data/metadata.json', 'r') as file:
+    with open(f'{DATA_FOLDER}/metadata.json', 'r') as file:
         data = json.load(file)
     if mailbox not in data:
         data[mailbox] = {}
     data[mailbox]['last_uid'] = email_id.decode()
-    with open('data/metadata.json', 'w') as file:
+    with open(f'{DATA_FOLDER}/metadata.json', 'w') as file:
         json.dump(data,file, indent=4)
 
 def retrieve_contacts(batch_size=100):

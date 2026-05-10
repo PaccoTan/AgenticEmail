@@ -7,13 +7,16 @@ from openai import OpenAI
 from dotenv import load_dotenv
 from jsonschema import validate, ValidationError
 from email import policy
+from config import EMAIL_FOLDER
 from get_email import get_contacts
+from pdf import html_to_pdf
 from send_email import generate_msg, send_msg
 from display_email import preview_email_html
 from typing import Dict, Any
 from extensions import socketio
 from sockets import pending
 import uuid
+import time
 
 load_dotenv()
 
@@ -82,7 +85,7 @@ TOOL_GENERATE_EMAIL = {
                         "properties": {
                             "filepath": {
                                 "type": "string",
-                                "description": "Absolute server file path (e.g. uploads/file.pdf)",
+                                "description": "Absolute server file path (e.g. uploads/file.pdf for user uploads or documents/file.pdf for generated documents)",
                             },
                             "filename": {
                                 "type": "string",
@@ -154,15 +157,41 @@ TOOL_GET_CONTACTS = {
     }
 }
 
+TOOL_CREATE_PDF = {
+    "type": "function",
+    "function": {
+        "name": "create_pdf",
+        "description": "Creates a PDF file from an HTML string and saves it using the provided filename.",
+        "strict": True,
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "html_str": {
+                    "type": "string",
+                    "description": "The HTML content to render into the PDF."
+                },
+                "filename": {
+                    "type": "string",
+                    "description": "The output PDF filename including the .pdf extension."
+                }
+            },
+            "required": ["html_str", "filename"],
+            "additionalProperties": False
+        }
+    }
+}
+
+def exec_create_pdf(args: Dict[str, Any]) -> Dict[str, Any]:
+    return html_to_pdf(**args)
+
 def exec_get_contacts(args: Dict[str, Any]) -> Dict[str, Any]:
     return get_contacts(**args)
-
 
 def exec_generate_email(args: Dict[str, Any]) -> Dict[str, Any]:
     msg, recipients = generate_msg(**args)
     if len(recipients):
         msg_id = str(uuid.uuid4())
-        with open(f'emails/{msg_id}.eml', 'wb') as f:
+        with open(f'{EMAIL_FOLDER}/{msg_id}.eml', 'wb') as f:
             f.write(msg.as_bytes())
         
         return {
@@ -176,8 +205,8 @@ def exec_send_msg(args: Dict[str, Any]) -> Dict[str, Any]:
         return {"error": "No msg_id specified."}
     msg_id = args["msg_id"]
     recipients = args["recipients"]
-    if Path(f"emails/{msg_id}.eml").is_file():
-        with open(f'emails/{msg_id}.eml', 'rb') as f:
+    if Path(f"{EMAIL_FOLDER}/{msg_id}.eml").is_file():
+        with open(f'{EMAIL_FOLDER}/{msg_id}.eml', 'rb') as f:
             msg = BytesParser(policy=policy.default).parse(f)
         request_id = str(uuid.uuid4())
         event = threading.Event()
@@ -196,13 +225,14 @@ def exec_send_msg(args: Dict[str, Any]) -> Dict[str, Any]:
     else:
         return {"error": "Unknown msg_id given."}
 
-TOOLS = [TOOL_GENERATE_EMAIL, TOOL_SEND_EMAIL, TOOL_GET_CONTACTS]
+TOOLS = [TOOL_GENERATE_EMAIL, TOOL_SEND_EMAIL, TOOL_GET_CONTACTS, TOOL_CREATE_PDF]
 
 # Map tool names to their executors
 TOOL_EXECUTORS = {
     "generate_email": exec_generate_email,
     "send_email": exec_send_msg,
-    "get_contacts": exec_get_contacts
+    "get_contacts": exec_get_contacts,
+    "create_pdf": exec_create_pdf
 }
 
 # Map tool names to their parameter schemas (for validation)
@@ -210,6 +240,7 @@ TOOL_SCHEMAS = {
     "generate_email": TOOL_GENERATE_EMAIL["function"]["parameters"],
     "send_email": TOOL_SEND_EMAIL["function"]["parameters"],
     "get_contacts": TOOL_GET_CONTACTS["function"]["parameters"],
+    "create_pdf": TOOL_CREATE_PDF["function"]["parameters"],
 }
 
 def validate_tool_args(tool_name: str, args: Dict[str, Any]) -> None:
@@ -274,7 +305,7 @@ def run_agent(client: OpenAI, messages: Dict[str, Any], goal: str, model: str = 
     print(f"\n{'='*60}")
     print(f"GOAL: {messages[-1]["content"]}")
     print(f"{'='*60}")
-
+    start = time.time()
     # Turn 1: Let the model pick a tool
     print("\n[Turn 1] Sending goal to model...")
     response = client.chat.completions.create(
@@ -283,11 +314,15 @@ def run_agent(client: OpenAI, messages: Dict[str, Any], goal: str, model: str = 
         tools=TOOLS,
         tool_choice="auto"
     )
-    
+    print("Response Time:",time.time()-start)
+
     for i in range(5):
         assistant_message = response.choices[0].message
         messages.append(assistant_message.model_dump())
-        
+        if response.usage is not None:
+            print(f"Prompt Tokens: {response.usage.prompt_tokens}")
+            print(f"Completion Tokens: {response.usage.completion_tokens}")
+            print(f"Total Tokens: {response.usage.total_tokens}")
         # Check if the model wants to call tools
         if not assistant_message.tool_calls:
             # No tool calls, model answered directly
@@ -297,6 +332,7 @@ def run_agent(client: OpenAI, messages: Dict[str, Any], goal: str, model: str = 
         # Process each tool call
         tool_results = []
         for tool_call in assistant_message.tool_calls:
+            start = time.time()
             tool_name = tool_call.function.name
             
             try:
@@ -330,7 +366,7 @@ def run_agent(client: OpenAI, messages: Dict[str, Any], goal: str, model: str = 
                     "role": "tool",
                     "content": json.dumps({"error": str(e)})
                 })
-        
+        print(f"{tool_name}: {time.time()-start}")
         messages.extend(tool_results)
 
         print(f"\n[Turn {i+2}] Sending tool results to model...")
@@ -359,7 +395,6 @@ def run_agent(client: OpenAI, messages: Dict[str, Any], goal: str, model: str = 
     return final_answer
 
 def run_agent_wrapper(client: OpenAI, messages: Dict[str, Any], goal: str, model: str = "gpt-4o-mini"):
-    print(messages)
     result = run_agent(client, messages, goal)
     socketio.emit("bot-reply", {
         "reply": result

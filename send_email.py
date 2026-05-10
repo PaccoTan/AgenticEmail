@@ -75,11 +75,7 @@ def get_type(path: str) -> tuple[str, str]:
 
     return maintype, subtype
 
-def attach_file(msg: EmailMessage, path: str, filename: str):
-    # print(path[:7])
-    # if "uploads/" != path[:7]:
-    #     raise ValueError("Filepath must start with uploads/.")
-    
+def attach_file(msg: EmailMessage, path: str, filename: str):    
     maintype, subtype = get_type(path)
     with open(path, "rb") as f:
         file_data = f.read()
