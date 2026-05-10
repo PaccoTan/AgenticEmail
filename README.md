@@ -130,12 +130,15 @@ Here is a guide on how to generate an app password for Gmail. https://support.go
 - display_email.py creates a html preview of email message
 - pdf.py converts html to pdf
 ---
+
+## Attributions
+
+WeasyPrint guide - https://www.nutrient.io/blog/how-to-generate-pdf-reports-from-html-in-python/
+
+---
 ## Author
 
 **Pacco Tan**  
 CSC 7644 — Applied LLM Development
 
-# Requirements
-# pip install openai flask flask-socketio dotenv email-validator jsonschema markdown
-# 
 
